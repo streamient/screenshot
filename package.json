@@ -1,0 +1,17 @@
+{
+    "name": "screenshot",
+    "description": "Headless Chromium screenshot service",
+    "version": "1.0.0",
+    "main": "app.js",
+    "scripts": {
+        "start": "node app.js",
+        "dev": "nodemon app.js"
+    },
+    "dependencies": {
+        "express": "^5.2.1",
+        "puppeteer-core": "^24.41.0"
+    },
+    "devDependencies": {
+        "nodemon": "^3.1.14"
+    }
+}

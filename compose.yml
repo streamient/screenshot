@@ -1,0 +1,11 @@
+name: screenshot
+
+services:
+  screenshot:
+    build:
+      context: .
+    ports:
+      - 3000
+    environment:
+      PORT: 3000
+    shm_size: '2g'
