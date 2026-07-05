@@ -1,8 +1,8 @@
-# Kumbukum Screenshot Service
+# Streamient Screenshot Service
 
 Screenshot service using Puppeteer and Chromium, running in a Docker container. Provides an HTTP API for generating screenshots on demand.
 
-Used by [razuna.com](https://razuna.com) and [kumbukum.com](https://kumbukum.com) for generating screenshots.
+Used by [razuna.com](https://razuna.com) and [streamient.com](https://streamient.com) for generating screenshots.
 
 ## Example usage:
 
