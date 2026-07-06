@@ -2,9 +2,6 @@ name: Chromium Smoke Test
 
 on:
     workflow_dispatch:
-    push:
-        branches:
-            - ci-chromium-smoke
 
 jobs:
     smoke-test:
