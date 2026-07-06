@@ -24,7 +24,7 @@ const generateRandomUA = () => {
 
 async function getBrowser() {
 	// Reuse the browser instance across requests for performance
-	if (browserInstance && browserInstance.isConnected()) {
+	if (browserInstance && browserInstance.connected) {
 		return browserInstance;
 	}
 
