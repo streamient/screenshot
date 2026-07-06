@@ -1,0 +1,46 @@
+name: Chromium Smoke Test
+
+on:
+    workflow_dispatch:
+
+jobs:
+    smoke-test:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+
+            - name: Build image
+              run: docker build -t screenshot-smoke .
+
+            - name: Chromium version
+              run: docker run --rm screenshot-smoke chromium --version
+
+            - name: Chromium headless dump-dom
+              run: |
+                  docker run --rm screenshot-smoke sh -c \
+                    "chromium --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --dump-dom https://example.com" \
+                    | grep -q "Example Domain"
+                  echo "Chromium headless works"
+
+            - name: Service end-to-end screenshot
+              run: |
+                  docker run -d --name smoke -p 3000:3000 -e PORT=3000 --shm-size=2g screenshot-smoke
+                  for i in $(seq 1 15); do
+                    curl -sf http://localhost:3000/health && break
+                    sleep 1
+                  done
+                  # Two requests: the second exercises the browser-reuse path (puppeteer 25 connected getter)
+                  curl -sf -o shot1.jpg -X POST http://localhost:3000/ \
+                    -H 'Content-Type: application/json' -d '{"url":"https://example.com"}'
+                  curl -sf -o shot2.jpg -X POST http://localhost:3000/ \
+                    -H 'Content-Type: application/json' -d '{"url":"https://example.com"}'
+                  file shot1.jpg shot2.jpg
+                  file shot1.jpg | grep -q "JPEG image data"
+                  file shot2.jpg | grep -q "JPEG image data"
+                  echo "End-to-end screenshot works"
+
+            - name: Container logs on failure
+              if: failure()
+              run: docker logs smoke 2>&1 | tail -50 || true
