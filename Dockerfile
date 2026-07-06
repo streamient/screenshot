@@ -16,7 +16,10 @@ ARG CHROMIUM_VERSION=149.0.7827.196-1~deb13u1
 ARG SNAPSHOT=20260625T165532Z
 
 # Install Chromium dependencies required by Puppeteer
-RUN echo "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/${SNAPSHOT}/ trixie-security main" \
+# (ca-certificates first — the snapshot source is https)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    echo "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/${SNAPSHOT}/ trixie-security main" \
     > /etc/apt/sources.list.d/chromium-snapshot.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
