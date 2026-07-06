@@ -6,8 +6,11 @@ on:
         branches:
             - ci-chromium-smoke
 
+env:
+    CHROME_FLAGS: --headless --no-sandbox --disable-gpu --disable-dev-shm-usage
+
 jobs:
-    smoke-test:
+    diagnose:
         runs-on: ubuntu-latest
 
         steps:
@@ -17,33 +20,64 @@ jobs:
             - name: Build image
               run: docker build -t screenshot-smoke .
 
-            - name: Chromium version
-              run: docker run --rm screenshot-smoke chromium --version
-
-            - name: Chromium headless dump-dom
+            - name: Baseline crash repro
+              continue-on-error: true
               run: |
                   docker run --rm screenshot-smoke sh -c \
-                    "chromium --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --dump-dom https://example.com" \
-                    | grep -q "Example Domain"
-                  echo "Chromium headless works"
+                    "chromium $CHROME_FLAGS --dump-dom about:blank; echo EXIT=\$?"
 
-            - name: Service end-to-end screenshot
+            - name: Variant 1 - big shm, no disable-dev-shm-usage
+              continue-on-error: true
               run: |
-                  docker run -d --name smoke -p 3000:3000 -e PORT=3000 --shm-size=2g screenshot-smoke
-                  for i in $(seq 1 15); do
-                    curl -sf http://localhost:3000/health && break
-                    sleep 1
-                  done
-                  # Two requests: the second exercises the browser-reuse path (puppeteer 25 connected getter)
-                  curl -sf -o shot1.jpg -X POST http://localhost:3000/ \
-                    -H 'Content-Type: application/json' -d '{"url":"https://example.com"}'
-                  curl -sf -o shot2.jpg -X POST http://localhost:3000/ \
-                    -H 'Content-Type: application/json' -d '{"url":"https://example.com"}'
-                  file shot1.jpg shot2.jpg
-                  file shot1.jpg | grep -q "JPEG image data"
-                  file shot2.jpg | grep -q "JPEG image data"
-                  echo "End-to-end screenshot works"
+                  docker run --rm --shm-size=2g screenshot-smoke sh -c \
+                    "chromium --headless --no-sandbox --disable-gpu --dump-dom about:blank >/dev/null 2>&1; echo EXIT=\$?"
 
-            - name: Container logs on failure
-              if: failure()
-              run: docker logs smoke 2>&1 | tail -50 || true
+            - name: Variant 2 - no crashpad
+              continue-on-error: true
+              run: |
+                  docker run --rm screenshot-smoke sh -c \
+                    "chromium $CHROME_FLAGS --disable-crash-reporter --no-crashpad --dump-dom about:blank >/dev/null 2>&1; echo EXIT=\$?"
+
+            - name: Variant 3 - run as non-root
+              continue-on-error: true
+              run: |
+                  docker run --rm --user 1000:1000 -e HOME=/tmp screenshot-smoke sh -c \
+                    "chromium $CHROME_FLAGS --dump-dom about:blank >/dev/null 2>&1; echo EXIT=\$?"
+
+            - name: Variant 4 - increased vm.max_map_count + unconfined
+              continue-on-error: true
+              run: |
+                  sudo sysctl -w vm.max_map_count=1048576
+                  docker run --rm --security-opt seccomp=unconfined --cap-add=SYS_ADMIN screenshot-smoke sh -c \
+                    "chromium $CHROME_FLAGS --dump-dom about:blank >/dev/null 2>&1; echo EXIT=\$?"
+
+            - name: Strace the crash
+              continue-on-error: true
+              run: |
+                  docker run --rm --cap-add=SYS_PTRACE screenshot-smoke sh -c "
+                    apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq strace >/dev/null 2>&1
+                    strace -f -qq -e trace=mmap,mprotect,brk,prctl chromium $CHROME_FLAGS --dump-dom about:blank 2>&1 | grep -B5 -A2 'SIGTRAP\|ENOMEM\|killed' | tail -40
+                    true"
+
+            - name: Compare - Google Chrome official build (bookworm base)
+              continue-on-error: true
+              run: |
+                  docker run --rm debian:trixie-slim sh -c "
+                    apt-get update -qq >/dev/null 2>&1
+                    apt-get install -y -qq wget ca-certificates >/dev/null 2>&1
+                    wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+                    apt-get install -y -qq ./google-chrome-stable_current_amd64.deb >/dev/null 2>&1
+                    google-chrome-stable --version
+                    google-chrome-stable $CHROME_FLAGS --dump-dom https://example.com 2>/dev/null | grep -o 'Example Domain' | head -1
+                    echo EXIT=\$?"
+
+            - name: Compare - chrome-headless-shell via puppeteer browsers
+              continue-on-error: true
+              run: |
+                  docker run --rm node:lts-trixie-slim sh -c "
+                    apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq ca-certificates libnss3 libatk-bridge2.0-0 libdrm2 libgbm1 libxkbcommon0 fonts-liberation >/dev/null 2>&1
+                    npx -y @puppeteer/browsers install chrome-headless-shell@stable --path /tmp/cb >/dev/null 2>&1
+                    SHELL_BIN=\$(find /tmp/cb -name chrome-headless-shell -type f | head -1)
+                    \$SHELL_BIN --version
+                    \$SHELL_BIN $CHROME_FLAGS --dump-dom https://example.com 2>/dev/null | grep -o 'Example Domain' | head -1
+                    echo EXIT=\$?"
